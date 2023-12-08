@@ -13,7 +13,7 @@ export class MyController {
   ) { }
 
   // POST endpoint to receive JSON data
-  @post('/profile')
+  @get('/profile')
   async processData(
     @requestBody({
       content: {
@@ -46,59 +46,50 @@ export class MyController {
     })
     body: any, // Use 'any' or create an interface with the required properties
   ): Promise<any> {
+    // TODO
+    console.log(body);
 
-    const accessToken = body.Authorization;
-
-    console.log(body.Authorization);
-    if (this.msalService.isAppOnlyToken(body)) {
-
-      throw new HttpErrors.Unauthorized('This route requires a user token');
-    }
     console.log(authConfig.protectedRoutes.profile.delegatedPermissions.scopes);
+    const authHeader = this.req.headers.authorization as string;
 
-    if (this.msalService.hasRequiredDelegatedPermissions(body, authConfig.protectedRoutes.profile.delegatedPermissions.scopes)) {
+    const accessToken = authHeader.substring('Bearer '.length);
+    console.log(accessToken);
 
-      try {
-        const oboToken = await this.msalService.getOboToken(accessToken);
 
-        // Use the on-behalf-of token to make requests to the Microsoft Graph API
-        // Use the on-behalf-of token to make requests to the Microsoft Graph API
-        const graphClient = await this.msalService.getGraphClient(oboToken);
-        const graphResponse = await graphClient.api('/me').responseType(ResponseType.RAW).get();
-        if (graphResponse.status === 401) {
-          if (graphResponse.headers.get('WWW-Authenticate')) {
-            if (this.msalService.isClientCapableOfClaimsChallenge(body)) {
+    try {
+      const oboToken = await this.msalService.getOboToken(accessToken);
 
-              this.response
-                .status(401)
-                .header('WWW-Authenticate', graphResponse.headers.get('WWW-Authenticate') || '')
-                .send({errorMessage: 'Continuous access evaluation resulted in claims challenge'});
+      const graphClient = await this.msalService.getGraphClient(oboToken);
+      const graphResponse = await graphClient.api('/me').responseType(ResponseType.RAW).get();
+      if (graphResponse.status === 401) {
+        if (graphResponse.headers.get('WWW-Authenticate')) {
+          if (this.msalService.isClientCapableOfClaimsChallenge(body)) {
 
-            }
+            this.response
+              .status(401)
+              .header('WWW-Authenticate', graphResponse.headers.get('WWW-Authenticate') || '')
+              .send({errorMessage: 'Continuous access evaluation resulted in claims challenge'});
 
-            this.response.status(401).send({
-              errorMessage: 'Continuous access evaluation resulted in claims challenge but the client is not capable. Please enable client capabilities and try again',
-            });
           }
-          throw new HttpErrors.Unauthorized('Unauthorized');
-        }
-        const graphData = await graphResponse.json();
-        this.response.status(200).send(graphData);
 
-        // this.response.status(201);
-        // // Respond with a success message or any other data
-        // return body;
-      }
-      catch (error) {
-        if (error instanceof msal.InteractionRequiredAuthError) {
-          throw new HttpErrors.BadRequest('Error Occured');
+          this.response.status(401).send({
+            errorMessage: 'Continuous access evaluation resulted in claims challenge but the client is not capable. Please enable client capabilities and try again',
+          });
         }
+        throw new HttpErrors.Unauthorized('Unauthorized');
+      }
+      const graphData = await graphResponse.json();
+      this.response.status(200).send(graphData);
+
+      // this.response.status(201);
+      // // Respond with a success message or any other data
+      // return body;
+    }
+    catch (error) {
+      if (error instanceof msal.InteractionRequiredAuthError) {
+        throw new HttpErrors.BadRequest('Error Occured');
       }
     }
-    else {
-      throw new HttpErrors.BadRequest('User does not have the required permissions');
-    }
-
 
     // Change the status code to 201 (Created)
 
